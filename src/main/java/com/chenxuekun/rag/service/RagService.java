@@ -5,6 +5,8 @@ import com.chenxuekun.rag.entity.ChatMessage;
 import com.chenxuekun.rag.entity.ChatSession;
 import com.chenxuekun.rag.mapper.ChatMessageMapper;
 import com.chenxuekun.rag.mapper.ChatSessionMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
@@ -21,17 +23,19 @@ import dev.langchain4j.store.embedding.filter.MetadataFilterBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * 检索增强问答：问题向量化 → 内存向量库相似度检索(kbId过滤) → 组装 Prompt → 流式生成
+ * 检索增强问答：问题向量化 → pgvector 相似度检索(kbId过滤) → 组装 Prompt → 流式生成
  * 强约束：仅依据检索资料回答，资料不足时明确返回"未找到相关依据"。
  */
 @Slf4j
@@ -46,17 +50,25 @@ public class RagService {
             3. 回答末尾不需要提及参考资料本身。
             """;
 
+    /** 历史消息缓存 key 前缀：rag:chat:msg:{sessionId} */
+    private static final String MSG_CACHE_KEY = "rag:chat:msg:";
+
     private final EmbeddingModel embeddingModel;
     private final StreamingChatModel streamingChatModel;
     private final EmbeddingStore<TextSegment> embeddingStore;
     private final ChatSessionMapper chatSessionMapper;
     private final ChatMessageMapper chatMessageMapper;
+    private final StringRedisTemplate stringRedisTemplate;
+    private final ObjectMapper objectMapper;
 
     @Value("${rag.retrieve.max-results}")
     private int maxResults;
 
     @Value("${rag.retrieve.min-score}")
     private double minScore;
+
+    @Value("${rag.cache.message-ttl-minutes:30}")
+    private long messageTtlMinutes;
 
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
@@ -170,6 +182,8 @@ public class RagService {
         msg.setContent(content);
         msg.setCreateTime(LocalDateTime.now());
         chatMessageMapper.insert(msg);
+        // 写后失效（Cache-Aside）：新消息落库后删除该会话缓存，下次查询回源重建，保证一致性
+        evictMessageCache(sessionId);
     }
 
     public List<ChatSession> listSessions(Long kbId) {
@@ -178,9 +192,45 @@ public class RagService {
                         .orderByDesc(ChatSession::getCreateTime));
     }
 
+    /**
+     * 历史消息查询：Redis 缓存热点会话，减轻高频历史查询的 DB 压力。
+     * 策略：Cache-Aside —— 先查缓存，miss 则回源 PostgreSQL 并回填（带 TTL）；
+     * Redis 不可用或序列化异常时自动降级直查 DB，不影响主流程。
+     */
     public List<ChatMessage> listMessages(Long sessionId) {
-        return chatMessageMapper.selectList(
+        String cacheKey = MSG_CACHE_KEY + sessionId;
+
+        // 1. 查缓存（异常降级）
+        try {
+            String cached = stringRedisTemplate.opsForValue().get(cacheKey);
+            if (cached != null) {
+                return objectMapper.readValue(cached, new TypeReference<List<ChatMessage>>() {});
+            }
+        } catch (Exception e) {
+            log.warn("Redis 读取失败，降级直查 DB sessionId={}：{}", sessionId, e.getMessage());
+        }
+
+        // 2. 回源（联合索引 idx_chat_message_session_time 覆盖该查询）
+        List<ChatMessage> messages = chatMessageMapper.selectList(
                 new LambdaQueryWrapper<ChatMessage>().eq(ChatMessage::getSessionId, sessionId)
                         .orderByAsc(ChatMessage::getCreateTime));
+
+        // 3. 回填缓存（异常忽略，不影响返回）
+        try {
+            stringRedisTemplate.opsForValue().set(cacheKey,
+                    objectMapper.writeValueAsString(messages),
+                    Duration.ofMinutes(messageTtlMinutes));
+        } catch (Exception e) {
+            log.warn("Redis 回填失败 sessionId={}：{}", sessionId, e.getMessage());
+        }
+        return messages;
+    }
+
+    private void evictMessageCache(Long sessionId) {
+        try {
+            stringRedisTemplate.delete(MSG_CACHE_KEY + sessionId);
+        } catch (Exception e) {
+            log.warn("Redis 缓存失效失败 sessionId={}：{}", sessionId, e.getMessage());
+        }
     }
 }

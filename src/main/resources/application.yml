@@ -1,3 +1,8 @@
+# ============================================================
+# 默认模式：PostgreSQL + pgvector + Redis（docker-compose 一键起库）
+#   docker compose up -d && mvn spring-boot:run
+# 演示模式：--spring.profiles.active=h2（零外部依赖，内存向量库 + H2 文件库）
+# ============================================================
 spring:
   application:
     name: rag-knowledge-qa
@@ -6,20 +11,23 @@ spring:
       max-file-size: 20MB
       max-request-size: 20MB
   datasource:
-    # H2 文件库：./data/ragdb 重启不丢；面试可改 MySQL/PG（配置见 README「生产部署」）
-    url: jdbc:h2:file:./data/ragdb;MODE=MySQL;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1
-    username: sa
-    password:
-    driver-class-name: org.h2.Driver
-  h2:
-    console:
-      enabled: true          # 浏览器访问 /h2-console 可视化查表
-      path: /h2-console
-      settings:
-        web-allow-others: true
+    url: jdbc:postgresql://localhost:5432/ragdb
+    username: rag
+    password: rag123456
+    driver-class-name: org.postgresql.Driver
   sql:
     init:
-      mode: always           # 强制执行 schema.sql（H2 文件模式默认不自动跑）
+      mode: always
+      platform: postgresql      # 加载 schema-postgresql.sql
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2s
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
 
 mybatis-plus:
   configuration:
@@ -31,6 +39,13 @@ mybatis-plus:
 
 # ---- RAG 配置 ----
 rag:
+  store:
+    # pgvector：向量持久化到 PostgreSQL（生产默认）
+    # memory：内存向量库（h2 演示模式自动切换，重启清空）
+    type: pgvector
+    dimension: 1024             # 与 embedding 模型输出维度一致
+  cache:
+    message-ttl-minutes: 30     # 历史消息缓存 TTL
   dashscope:
     # 阿里云百炼（OpenAI 兼容模式），启动前 set DASHSCOPE_API_KEY=sk-xxx
     base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
@@ -44,3 +59,35 @@ rag:
 
 server:
   port: 8080
+
+---
+# ============================================================
+# h2 演示模式：零外部依赖（内存向量库 + H2 文件库）
+# 启动：mvn spring-boot:run -Dspring-boot.run.profiles=h2
+# ============================================================
+spring:
+  config:
+    activate:
+      on-profile: h2
+  datasource:
+    url: jdbc:h2:file:./data/ragdb;MODE=MySQL;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+      settings:
+        web-allow-others: true
+  sql:
+    init:
+      platform: h2              # 加载 schema-h2.sql
+  data:
+    redis:
+      # 演示模式无 Redis 依赖，缓存层自动降级直查 DB
+      host: localhost
+
+rag:
+  store:
+    type: memory
