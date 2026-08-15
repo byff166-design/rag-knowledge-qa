@@ -1,0 +1,44 @@
+云启科技 Java 后端技术规范 FAQ
+===============================
+
+1. 项目骨架用什么？
+   统一 Spring Boot 3.x + Maven 多模块。父 POM 锁版本，子模块只声明依赖不写版本号，避免版本漂移。
+
+2. ORM 选什么？
+   优先 MyBatis-Plus 3.5.x，单表 CRUD 用 BaseMapper，复杂多表 JOIN 写 XML。禁止在公司项目里混用 JPA 和 MyBatis。
+
+3. 数据库连接池用什么？
+   HikariCP（Spring Boot 默认）。生产环境 maximumPoolSize 不要超过 (CPU 核心数 * 2 + 有效磁盘数)，默认 10 够大多数场景。严禁直接使用 DriverManager 拿连接。
+
+4. Redis 缓存击穿怎么处理？
+   热点 key 过期瞬间打到数据库的击穿问题，用互斥锁（Redis SETNX 或 Redisson）+ 逻辑过期双重保险；缓存穿透用布隆过滤器拦截非法 key；雪崩用过期时间加随机偏移量。
+
+5. 接口幂等怎么保证？
+   写接口必须幂等。推荐：前端生成 requestId 带在 header，后端用 Redis SETNX 校验，过期时间取业务超时的 2 倍。重复请求直接返回上次结果。
+
+6. 统一异常处理怎么做？
+   用 @RestControllerAdvice + @ExceptionHandler。业务异常抛 BusinessException(code, msg)，参数校验异常 MethodArgumentNotValidException 单独捕获返回字段级错误，未知异常兜底返回 500 但不打堆栈到响应体。
+
+7. 日志规范？
+   只用 SLF4J + Logback。禁止 System.out.println。生产 INFO 级别，关键链路打 traceId（MDC + 拦截器）。异常必须 log.error("msg", e) 带堆栈，不许只打 message。
+
+8. 接口版本怎么管？
+   URL 路径版本：/api/v1/xxx。大版本升级才升 v2，小调整不升版本。废弃接口加 @Deprecated 注解 + 日志告警，给业务方 2 个迭代周期迁移。
+
+9. 大文件上传怎么处理？
+   走 OSS/COS 对象存储，不要走业务库。接口只接收文件流 + 直传 OSS，返回 fileId。业务表只存 fileId 不存文件内容。分片上传阈值 5MB。
+
+10. 定时任务用什么框架？
+    单机用 Spring @Scheduled（生产必须配 ShedLock 防多实例重复执行）；分布式用 XXL-Job 或公司自研调度平台。禁止依赖 crontab 裸跑。
+
+11. RAG 知识库的 chunk 大小怎么定？
+    中文文档建议 300~500 字符一段，重叠 50~80 字符防止语义被切断。英文 512 token。实际靠评测集调参，召回率和上下文完整性是两个矛盾指标要平衡。
+
+12. 向量检索的 top-k 取多少？
+    默认 5，配合 min-score 过滤。如果召回率不够先扩 k 到 10~20 再用 reranker 重排取前 5。不要盲目扩大 k，上下文太长会让 LLM 回答跑偏。
+
+13. Embedding 模型选型？
+    中文场景推荐 text-embedding-v3（1024 维）或 bge-large-zh。生产环境要考虑推理成本和延迟，轻量场景可以用 bge-small-zh-v1.5（512 维）。
+
+14. RAG 检索效果差怎么排查？
+    分三步：① 看召回——把 query embedding 后直接 SQL 查 pgvector 看返回的 chunk 对不对；② 看 prompt——把召回的 chunk 拼到 prompt 里肉眼看有没有干扰信息；③ 看生成——如果前两步都对就是 LLM 本身能力问题，换模型或调 temperature。
