@@ -72,6 +72,7 @@ public class AiConfig {
     /**
      * 向量持久化：PostgreSQL + pgvector（默认）。
      * useIndex：IVFFlat 近似最近邻索引，写入时自动建表建索引。
+     * indexListSize：IVFFlat 倒排聚类的 list 数，经验值 rows/1000（个人项目数据量小，取下限 100）。
      * metadata（kbId）以 JSONB 存储，检索时在库端完成过滤，不拉全量到内存。
      */
     @Bean
@@ -85,6 +86,7 @@ public class AiConfig {
                 .dimension(dimension)
                 .table("kb_chunk_vector")
                 .useIndex(true)
+                .indexListSize(100)
                 .createTable(true)
                 .build();
     }
