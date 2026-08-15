@@ -1,6 +1,10 @@
 # ============================================================
-# 默认模式：PostgreSQL + pgvector + Redis（docker-compose 一键起库）
-#   docker compose up -d && mvn spring-boot:run
+# 默认模式：PostgreSQL + pgvector + Redis
+#   本地：docker compose up -d（默认 localhost 连接）
+#   云端（免 Docker）：环境变量注入连接串，见 README「云端部署」
+#     export PG_JDBC_URL=...   # Neon 提供的 JDBC 连接串
+#     export PG_USERNAME=... PG_PASSWORD=...
+#     export REDIS_URL=rediss://...   # Upstash 提供的 rediss:// 连接串
 # 演示模式：--spring.profiles.active=h2（零外部依赖，内存向量库 + H2 文件库）
 # ============================================================
 spring:
@@ -11,18 +15,18 @@ spring:
       max-file-size: 20MB
       max-request-size: 20MB
   datasource:
-    url: jdbc:postgresql://localhost:5432/ragdb
-    username: rag
-    password: rag123456
+    url: ${PG_JDBC_URL:jdbc:postgresql://localhost:5432/ragdb}
+    username: ${PG_USERNAME:rag}
+    password: ${PG_PASSWORD:rag123456}
     driver-class-name: org.postgresql.Driver
   sql:
     init:
       mode: always
-      platform: postgresql      # 加载 schema-postgresql.sql
+      platform: postgresql      # 加载 schema-postgresql.sql（幂等，可重复执行）
   data:
     redis:
-      host: localhost
-      port: 6379
+      # redis:// 普通连接；云 Redis（Upstash）用 rediss:// 前缀自动走 TLS
+      url: ${REDIS_URL:redis://localhost:6379}
       timeout: 2s
       lettuce:
         pool:

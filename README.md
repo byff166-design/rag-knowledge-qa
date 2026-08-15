@@ -52,10 +52,12 @@
 
 - JDK 17+（开发环境使用 JDK 25）
 - Maven 3.6+（或 IDEA 内置 Maven）
-- Docker Desktop（起 PostgreSQL 和 Redis）
+- 数据库/缓存，二选一：
+  - **Docker Desktop**：一条命令起 PostgreSQL 和 Redis（见下）
+  - **云端托管（免安装）**：Neon（PostgreSQL + pgvector）+ Upstash（Redis），见「云端部署（免 Docker）」
 - 阿里云百炼 API Key（[开通地址](https://bailian.console.aliyun.com/)，开通后获取 sk-xxx）
 
-### 启动
+### 启动（方式一：Docker 本地起库）
 
 ```bash
 # 1. 一键起基础设施（PostgreSQL+pgvector、Redis）
@@ -74,9 +76,28 @@ java -jar target/rag-knowledge-qa-1.0.0.jar
 > 零依赖演示模式（无 Docker）：`java -jar target/rag-knowledge-qa-1.0.0.jar --spring.profiles.active=h2`
 > 内存向量库 + H2 文件库，重启向量数据清空，仅用于快速体验。
 
+### 云端部署（方式二：免 Docker，Neon + Upstash）
+
+本机无法运行 Docker 时，用免费云托管跑通完整 PG+pgvector+Redis 链路：
+
+1. **PostgreSQL + pgvector**：注册 [neon.tech](https://neon.tech)（GitHub 登录）→ 创建项目 → Dashboard 复制 **JDBC** 格式连接串（形如 `jdbc:postgresql://ep-xxx.aws.neon.tech/neondb?sslmode=require`）
+2. **Redis**：注册 [upstash.com](https://upstash.com) → 创建免费 Redis → 复制 `rediss://default:xxx@...` 连接串（`rediss` 前缀自动走 TLS）
+3. **启动**（Git Bash，连接串用环境变量注入，不落盘）：
+
+```bash
+export DASHSCOPE_API_KEY=sk-xxxx
+export PG_JDBC_URL='jdbc:postgresql://ep-xxx.aws.neon.tech/neondb?sslmode=require'
+export PG_USERNAME='neondb_owner'
+export PG_PASSWORD='xxxx'
+export REDIS_URL='rediss://default:xxxx@xxx.upstash.io:6379'
+java -jar target/rag-knowledge-qa-1.0.0.jar
+```
+
+启动时 schema-postgresql.sql 自动执行（幂等：`CREATE EXTENSION IF NOT EXISTS vector` + `CREATE TABLE IF NOT EXISTS`，云库可重复执行不丢数据），向量表由 PgVectorEmbeddingStore 首次写入时自动创建。
+
 启动后访问：
 - API 地址：http://localhost:8080
-- 数据库连接：`localhost:5432/ragdb`，用户 `rag` / 密码 `rag123456`（docker-compose 默认）
+- 数据库连接（Docker 方式）：`localhost:5432/ragdb`，用户 `rag` / 密码 `rag123456`（docker-compose 默认）
 
 ### 快速验证（一键冒烟测试）
 
