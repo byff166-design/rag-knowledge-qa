@@ -1,7 +1,7 @@
 @echo off
 chcp 936 >nul
 title RAG smoke test
-cd /d "C:\Users\闄堝鍫僜WorkBuddy\姹傝亴\椤圭洰\rag-knowledge-qa"
+cd /d "C:\Users\陈学堃\WorkBuddy\求职\项目\rag-knowledge-qa"
 
 setlocal EnableDelayedExpansion
 

@@ -1,7 +1,7 @@
 @echo off
 chcp 936 >nul
 title RAG service start
-cd /d "C:\Users\闄堝鍫僜WorkBuddy\姹傝亴\椤圭洰\rag-knowledge-qa"
+cd /d "C:\Users\陈学堃\WorkBuddy\求职\项目\rag-knowledge-qa"
 
 set DASHSCOPE_API_KEY=sk-ws-H.EEXDIRL.tDQj.MEUCIFQX-wiflRVj-zH3PbM6lzMMPEX1cxDbxT0AzJf3HCT3AiEAvXTaOYvn1EYi66eg8n7-c1UvoTAuN63NWjcB77UmrII
 set PG_JDBC_URL=jdbc:postgresql://ep-orange-fire-ax91j2ot-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require

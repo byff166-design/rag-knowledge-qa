@@ -76,6 +76,16 @@ java -jar target/rag-knowledge-qa-1.0.0.jar
 > 零依赖演示模式（无 Docker）：`java -jar target/rag-knowledge-qa-1.0.0.jar --spring.profiles.active=h2`
 > 内存向量库 + H2 文件库，重启向量数据清空，仅用于快速体验。
 
+#### Windows PowerShell 一键启动（h2 演示模式）
+
+```powershell
+cd "C:\Users\陈学堃\WorkBuddy\求职\项目\rag-knowledge-qa"
+$env:DASHSCOPE_API_KEY="sk-xxxx"
+& "D:\java\jdk-25.0.4+7\bin\java.exe" -jar target\rag-knowledge-qa-1.0.0.jar --spring.profiles.active=h2
+```
+
+启动后浏览器访问 `http://localhost:8080/h2-console`，JDBC URL 填 `jdbc:h2:file:./data/ragdb`，User `sa`，Password 留空，可查看数据表。
+
 ### 云端部署（方式二：免 Docker，Neon + Upstash）
 
 本机无法运行 Docker 时，用免费云托管跑通完整 PG+pgvector+Redis 链路：
@@ -103,8 +113,21 @@ java -jar target/rag-knowledge-qa-1.0.0.jar
 
 项目启动后，在项目根目录执行：
 
+**Linux/macOS/Git Bash：**
 ```bash
 bash scripts/test-api.sh
+```
+
+**Windows PowerShell：**
+```powershell
+# 1. 查看知识库列表
+Invoke-WebRequest -Uri "http://localhost:8080/api/kb/list" -Method GET -UseBasicParsing | Select-Object -ExpandProperty Content
+
+# 2. 创建知识库
+Invoke-WebRequest -Uri "http://localhost:8080/api/kb" -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"name":"测试知识库","description":"面试用"}' -UseBasicParsing
+
+# 3. SSE 流式问答（kbId=1）
+Invoke-WebRequest -Uri "http://localhost:8080/api/chat?kbId=1" -Method POST -Headers @{"Content-Type"="application/json"} -Body '{"question":"什么是RAG"}' -UseBasicParsing
 ```
 
 脚本自动完成 6 步：创建知识库 → 上传 `docs/sample-faq.txt`（14 条后端技术规范）→ 轮询向量化状态 → SSE 流式问答「缓存击穿怎么处理」→ 查看会话与消息历史。看到流式回答即全链路打通。
